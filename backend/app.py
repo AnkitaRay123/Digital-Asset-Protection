@@ -24,7 +24,7 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # MongoDB connection
-MONGO_URI = 'mongodb://localhost:27017/'
+MONGO_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
 client = MongoClient(MONGO_URI)
 db = client['digital_asset_protection']
 media_collection = db['media_fingerprints']
