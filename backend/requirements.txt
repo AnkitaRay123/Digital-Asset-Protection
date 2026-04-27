@@ -1,0 +1,11 @@
+Flask
+Flask-Cors
+pymongo
+Pillow
+imagehash
+opencv-python
+werkzeug
+torch
+torchvision
+numpy
+scipy
