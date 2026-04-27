@@ -65,7 +65,7 @@ function App() {
   const [showBootOverlay, setShowBootOverlay] = useState(false)
   const location = useLocation()
   const isFirstRender = useRef(true)
-  const sectionAudioTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const sectionAudioTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Handle section change sounds
   useEffect(() => {

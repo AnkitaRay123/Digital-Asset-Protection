@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Loader2, Trash2, CheckCircle, Search, ShieldAlert, ArrowUpRight } from 'lucide-react'
 import { formatDateTime } from '../../lib/formatters'
+import API_BASE_URL from '../../config/api'
 
 interface Incident {
   _id: string
@@ -27,7 +28,7 @@ export function AdminIncidentsPage() {
   const fetchIncidents = async () => {
     setIsLoading(true)
     try {
-      const res = await axios.get('http://localhost:5000/incidents')
+      const res = await axios.get(`${API_BASE_URL}/incidents`)
       setIncidents(res.data || [])
     } catch (err) {
       console.error('Failed to fetch incidents:', err)
@@ -44,7 +45,7 @@ export function AdminIncidentsPage() {
   const handleResolve = async (id: string) => {
     setResolvingId(id)
     try {
-      await axios.post(`http://localhost:5000/incidents/${id}/resolve`)
+      await axios.post(`${API_BASE_URL}/incidents/${id}/resolve`)
       setIncidents((prev) =>
         prev.map((inc) => (inc._id === id ? { ...inc, status: 'resolved' } : inc))
       )
@@ -61,7 +62,7 @@ export function AdminIncidentsPage() {
     
     setDeletingId(id)
     try {
-      await axios.delete(`http://localhost:5000/incidents/${id}`)
+      await axios.delete(`${API_BASE_URL}/incidents/${id}`)
       setIncidents((prev) => prev.filter((inc) => inc._id !== id))
     } catch (err) {
       console.error('Failed to delete incident:', err)
@@ -194,7 +195,7 @@ export function AdminIncidentsPage() {
                 <div className="admin-incident-row__actions stack-sm">
                   {incident.media_url && (
                     <a
-                      href={incident.media_url.startsWith('http') ? incident.media_url : `http://localhost:5000/uploads/${incident.media_url}`}
+                      href={incident.media_url.startsWith('http') ? incident.media_url : `${API_BASE_URL}/uploads/${incident.media_url}`}
                       target="_blank"
                       rel="noreferrer"
                       className="button button--secondary button--sm"

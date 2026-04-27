@@ -6,6 +6,7 @@ import { useAppContext } from '../../context/AppContext'
 import { formatDateTime } from '../../lib/formatters'
 import axios from 'axios'
 import { Loader2 } from 'lucide-react'
+import API_BASE_URL from '../../config/api'
 
 export function LibraryPage() {
   const { mediaAssets } = useAppContext()
@@ -18,7 +19,7 @@ export function LibraryPage() {
   useEffect(() => {
     const fetchMedia = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/media')
+        const response = await axios.get(`${API_BASE_URL}/media`, { timeout: 5000 })
         setBackendAssets(response.data.media || [])
       } catch (err) {
         new Audio('/failed-sound.mp3').play().catch(e => console.log('Failed sound blocked', e))
@@ -84,7 +85,7 @@ export function LibraryPage() {
           {backendAssets.map((bAsset) => (
             <article key={bAsset._id} className="panel media-card" style={{ border: '1px solid #38bdf8' }}>
               <MediaSurface 
-                src={`http://localhost:5000/uploads/${bAsset.filename}`} 
+                src={`${API_BASE_URL}/uploads/${bAsset.filename}`} 
                 alt={bAsset.filename} 
                 eyebrow={bAsset.type} 
                 title={bAsset.filename} 

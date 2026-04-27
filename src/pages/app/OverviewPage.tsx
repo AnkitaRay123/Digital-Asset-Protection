@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import API_BASE_URL from '../../config/api'
 import {
   CartesianGrid,
   Line,
@@ -29,7 +30,7 @@ export function OverviewPage() {
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const res = await fetch('http://localhost:5000/alerts')
+        const res = await fetch(`${API_BASE_URL}/alerts`)
         const data = await res.json()
         if (data.alerts) {
           const newLength = data.alerts.length
@@ -59,7 +60,7 @@ export function OverviewPage() {
     setIsScanning(true)
     setHasScanned(false)
     try {
-      const res = await fetch('http://localhost:5000/scan-web')
+      const res = await fetch(`${API_BASE_URL}/scan-web`)
       const data = await res.json()
       if (data.violations) {
         setScanResults(data.violations)
@@ -190,7 +191,7 @@ export function OverviewPage() {
               </h2>
             </div>
             <button className="button button--ghost" onClick={async () => {
-              await fetch('http://localhost:5000/alerts/mark-read', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+              await fetch(`${API_BASE_URL}/alerts/mark-read`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
             }}>
               Mark all read
             </button>

@@ -7,6 +7,7 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react'
+import API_BASE_URL from '../config/api'
 import {
   alertsSeed,
   dashboardMetricsSeed,
@@ -59,6 +60,7 @@ interface AppContextValue {
   loginAs: (role: UserRole) => void
   logout: () => void
   addUpload: (input: UploadInput) => string
+  removeMediaAsset: (id: string) => void
   openModal: (action: ModalAction, alertId: string) => void
   closeModal: () => void
   confirmModal: (payload?: { reviewer?: string }) => void
@@ -350,7 +352,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   )
 
   const addUpload = useCallback((input: UploadInput) => {
-    const previewUrl = input.filename ? `http://localhost:5000/uploads/${input.filename}` : URL.createObjectURL(input.file)
+    const previewUrl = input.filename ? `${API_BASE_URL}/uploads/${input.filename}` : URL.createObjectURL(input.file)
     const assetId = `asset-upload-${Date.now()}`
     const asset: MediaAsset = {
       id: assetId,
@@ -404,6 +406,14 @@ export function AppProvider({ children }: PropsWithChildren) {
     return assetId
   }, [])
 
+  const removeMediaAsset = useCallback((id: string) => {
+    setMediaAssets((prev) => prev.filter((item) => item.id !== id))
+    setToasts((currentToasts) => [
+      ...currentToasts,
+      createToast('Media deleted', 'The asset has been removed from the library.', 'info'),
+    ])
+  }, [])
+
   const toggleNotification = useCallback((channel: keyof UserSession['notificationPrefs']) => {
     setSession((currentSession) => {
       if (!currentSession) {
@@ -437,6 +447,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       loginAs,
       logout,
       addUpload,
+      removeMediaAsset,
       openModal,
       closeModal,
       confirmModal,
@@ -459,6 +470,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       loginAs,
       logout,
       addUpload,
+      removeMediaAsset,
       openModal,
       closeModal,
       confirmModal,

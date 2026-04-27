@@ -4,6 +4,7 @@ import imagehash
 import numpy as np
 import torch
 import torchvision.models as models
+from torchvision.models import ResNet50_Weights
 import torchvision.transforms as transforms
 from PIL import Image
 from flask import Flask, request, jsonify, send_from_directory
@@ -17,20 +18,62 @@ import requests as req
 from numpy.linalg import norm
 from apscheduler.schedulers.background import BackgroundScheduler
 from crawler import crawl_web
+import time
+import sys
 
 app = Flask(__name__)
 CORS(app)
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB file size limit
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# MongoDB connection
-MONGO_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-client = MongoClient(MONGO_URI)
-db = client['digital_asset_protection']
-media_collection = db['media_fingerprints']
-incidents_collection = db['incidents']
-alerts_collection = db['alerts']
-scan_logs_collection = db['scan_logs']  # tracks every similarity scan for analytics
+# ==========================================
+# MONGODB CONNECTION WITH AUTOMATIC RETRY
+# ==========================================
+def connect_mongodb_with_retry(max_retries=5, retry_delay=2):
+    """Connect to MongoDB with automatic retry logic."""
+    MONGO_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"\n[MongoDB Connection] Attempt {attempt + 1}/{max_retries}")
+            print(f"[MongoDB Connection] Connecting to {MONGO_URI}...")
+            
+            client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000, connectTimeoutMS=5000)
+            # Trigger a connection attempt
+            client.admin.command('ping')
+            
+            print(f"[MongoDB Connection] ✅ Successfully connected to MongoDB!")
+            return client
+            
+        except Exception as e:
+            print(f"[MongoDB Connection] ❌ Connection failed: {str(e)}")
+            
+            if attempt < max_retries - 1:
+                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                print(f"[MongoDB Connection] ⏳ Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"[MongoDB Connection] ⚠️  All connection attempts failed!")
+                print(f"[MongoDB Connection] Please ensure MongoDB is running on {MONGO_URI}")
+                return None
+    
+    return None
+
+# Initialize MongoDB connection with retry
+client = connect_mongodb_with_retry(max_retries=6, retry_delay=2)
+
+if client is None:
+    print("\n[FATAL] MongoDB connection failed after all retries.")
+    print("[INFO] The application will continue running but database operations may fail.")
+    print("[INFO] Please start MongoDB and restart this application.")
+    print("[HINT] Run: mongod --dbpath C:\\data\\db --port 27017\n")
+
+db = client['digital_asset_protection'] if client else None
+media_collection = db['media_fingerprints'] if db else None
+incidents_collection = db['incidents'] if db else None
+alerts_collection = db['alerts'] if db else None
+scan_logs_collection = db['scan_logs'] if db else None
 
 # ==========================================
 # ALERT SYSTEM: EMAIL & WEBHOOK
@@ -78,7 +121,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Loading ResNet50 on {device}...")
 
 # Load pretrained ResNet50
-resnet50 = models.resnet50(pretrained=True)
+resnet50 = models.resnet50(weights=ResNet50_Weights.DEFAULT)
 # Remove the final classification layer (fc) to get the 2048-dimensional feature embedding vector
 resnet50 = torch.nn.Sequential(*list(resnet50.children())[:-1])
 resnet50 = resnet50.to(device)
@@ -132,6 +175,9 @@ def process_video_frames(filepath, interval=2):
         fps = 30 # Default fallback fps
         
     frame_interval = int(fps * interval)
+    if frame_interval == 0:
+        frame_interval = 1  # Ensure we process at least one frame
+        
     hashes = []
     embeddings = []
     
@@ -178,6 +224,15 @@ def cosine_similarity(vec1, vec2):
     return float(sim)
 
 
+# ==========================================
+# HEALTH CHECK (Required for Render hosting)
+# ==========================================
+@app.route('/health', methods=['GET'])
+def health_check():
+    status = {'status': 'ok', 'db': 'connected' if client else 'disconnected'}
+    return jsonify(status), 200
+
+
 @app.route('/upload-media', methods=['POST'])
 def upload_media():
     if 'file' not in request.files:
@@ -186,6 +241,17 @@ def upload_media():
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No file selected for uploading'}), 400
+    
+    # Check file size before processing
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+    
+    if file_size == 0:
+        return jsonify({'error': 'File is empty'}), 400
+    
+    if file_size > app.config['MAX_CONTENT_LENGTH']:
+        return jsonify({'error': f'File size exceeds {app.config["MAX_CONTENT_LENGTH"] // (1024*1024)}MB limit'}), 413
         
     if file:
         import uuid
@@ -193,7 +259,6 @@ def upload_media():
         name, ext_part = os.path.splitext(base_filename)
         filename = f"{name}_{uuid.uuid4().hex[:8]}{ext_part}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
         
         ext = filename.rsplit('.', 1)[-1].lower()
         hashes = []
@@ -201,18 +266,28 @@ def upload_media():
         media_type = ''
         
         try:
+            # Save file inside try block for proper cleanup
+            file.save(filepath)
+            
             if ext in ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp']:
                 media_type = 'image'
                 hashes = [compute_image_hash(filepath)]
                 emb = extract_embedding(filepath)
                 if emb:
                     embeddings = [emb]
+                else:
+                    raise Exception('Failed to extract embedding from image')
             elif ext in ['mp4', 'avi', 'mov', 'mkv', 'webm']:
                 media_type = 'video'
                 hashes, embeddings = process_video_frames(filepath, interval=2)
             else:
                 os.remove(filepath)
                 return jsonify({'error': 'Unsupported file type'}), 400
+            
+            # Validate that we got at least some embeddings
+            if not embeddings or len(embeddings) == 0:
+                os.remove(filepath)
+                return jsonify({'error': 'Failed to generate embeddings from file. File may be corrupted or unsupported format.'}), 400
                 
             # ==========================================
             # DEDUPLICATION CHECK
@@ -267,7 +342,12 @@ def upload_media():
                     os.remove(filepath)
             except Exception as cleanup_err:
                 print(f"Cleanup error: {cleanup_err}")
-            return jsonify({'error': str(e) or repr(e)}), 500
+                
+            error_msg = str(e)
+            if "ServerSelectionTimeoutError" in str(type(e)):
+                error_msg = "Database connection failed. Please ensure MongoDB is running locally on port 27017."
+                
+            return jsonify({'error': error_msg}), 500
 
 # ==========================================
 # MEDIA LIBRARY MANAGEMENT
@@ -431,6 +511,17 @@ def check_similarity():
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No file selected for uploading'}), 400
+    
+    # Check file size before processing
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+    
+    if file_size == 0:
+        return jsonify({'error': 'File is empty'}), 400
+    
+    if file_size > app.config['MAX_CONTENT_LENGTH']:
+        return jsonify({'error': f'File size exceeds {app.config["MAX_CONTENT_LENGTH"] // (1024*1024)}MB limit'}), 413
         
     if file:
         import uuid
@@ -438,11 +529,12 @@ def check_similarity():
         name, ext_part = os.path.splitext(base_filename)
         filename = f"{name}_{uuid.uuid4().hex[:8]}{ext_part}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
         
         ext = filename.rsplit('.', 1)[-1].lower()
         
         try:
+            file.save(filepath)
+            
             target_embeddings = []
             target_hash = None
             if ext in ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp']:
@@ -545,6 +637,17 @@ def test_similarity():
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No file selected for uploading'}), 400
+    
+    # Check file size before processing
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+    
+    if file_size == 0:
+        return jsonify({'error': 'File is empty'}), 400
+    
+    if file_size > app.config['MAX_CONTENT_LENGTH']:
+        return jsonify({'error': f'File size exceeds {app.config["MAX_CONTENT_LENGTH"] // (1024*1024)}MB limit'}), 413
         
     if file:
         import uuid
@@ -552,11 +655,12 @@ def test_similarity():
         name, ext_part = os.path.splitext(base_filename)
         filename = f"{name}_{uuid.uuid4().hex[:8]}{ext_part}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
         
         ext = filename.rsplit('.', 1)[-1].lower()
         
         try:
+            file.save(filepath)
+            
             target_embeddings = []
             if ext in ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp']:
                 emb = extract_embedding(filepath)
@@ -635,9 +739,17 @@ def test_similarity():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            if os.path.exists(filepath):
-                os.remove(filepath)
-            return jsonify({'error': str(e) or repr(e)}), 500
+            try:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+            except Exception as cleanup_err:
+                pass
+                
+            error_msg = str(e)
+            if "ServerSelectionTimeoutError" in str(type(e)):
+                error_msg = "Database connection failed. Please ensure MongoDB is running locally on port 27017."
+                
+            return jsonify({'error': error_msg}), 500
 
 
 @app.route('/uploads/<filename>')

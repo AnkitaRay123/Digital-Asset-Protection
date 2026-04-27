@@ -7,9 +7,9 @@ from pymongo import MongoClient
 from datetime import datetime
 from urllib.parse import urljoin
 
-# MongoDB connection
-MONGO_URI = 'mongodb://localhost:27017/'
-client = MongoClient(MONGO_URI)
+# MongoDB connection — reads from env var (set MONGODB_URI on hosting platform)
+MONGO_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
+client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
 db = client['digital_asset_protection']
 incidents_collection = db['incidents']
 alerts_collection = db['alerts']
@@ -44,11 +44,13 @@ def download_image(img_url):
     return None
 
 def check_similarity_api(filepath):
+    """Call the similarity API — uses API_BASE_URL env var on cloud, localhost in dev."""
     try:
-        url = 'http://localhost:5000/check-similarity'
+        base_url = os.environ.get('API_BASE_URL', 'http://localhost:5000')
+        url = f'{base_url}/check-similarity'
         with open(filepath, 'rb') as f:
             files = {'file': f}
-            response = requests.post(url, files=files)
+            response = requests.post(url, files=files, timeout=30)
             if response.status_code == 200:
                 return response.json()
     except Exception as e:

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import API_BASE_URL from '../../config/api'
 import {
   Area,
   AreaChart,
@@ -93,7 +94,7 @@ export function AdminDashboardPage() {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   const [refreshing, setRefreshing] = useState(false)
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchAnalytics = async () => {
     setRefreshing(true)
@@ -102,7 +103,7 @@ export function AdminDashboardPage() {
       // Hard 5-second timeout — no more infinite loading
       const timer = setTimeout(() => controller.abort(), 5000)
 
-      const res = await fetch('http://localhost:5000/analytics', {
+      const res = await fetch(`${API_BASE_URL}/analytics`, {
         signal: controller.signal,
       })
       clearTimeout(timer)
@@ -233,7 +234,7 @@ export function AdminDashboardPage() {
       {/* ── Offline warning banner (non-blocking) ── */}
       {isOffline && (
         <div className="admin-error-banner" role="alert">
-          <span>⚠ Flask backend unreachable at localhost:5000</span>
+          <span>⚠ Flask backend unreachable at {API_BASE_URL}</span>
           <span className="admin-error-hint">
             Restart the Flask server: in the <strong>backend/</strong> folder run{' '}
             <code>python app.py</code>. The page will auto-reconnect every 10 seconds.

@@ -1,13 +1,43 @@
 services:
+  # ─────────────────────────────────────────
+  # Backend: Flask / Python
+  # ─────────────────────────────────────────
   - type: web
     name: digital-asset-protection-backend
     env: python
     plan: free
+    rootDir: .
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: gunicorn -w 4 -b 0.0.0.0:$PORT backend.app:app
+    startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT --timeout 120 "backend.app:app"
     healthCheckPath: /health
     envVars:
       - key: MONGODB_URI
-        value: your_mongodb_atlas_connection_string
+        sync: false          # set this manually in Render dashboard (MongoDB Atlas URI)
       - key: FLASK_ENV
         value: production
+      - key: API_BASE_URL
+        # Set this to the public URL of this backend service after first deploy
+        sync: false
+
+  # ─────────────────────────────────────────
+  # Frontend: React / Vite (Static Site)
+  # ─────────────────────────────────────────
+  - type: web
+    name: digital-asset-protection-frontend
+    env: static
+    plan: free
+    rootDir: .
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        # Set this to the public URL of the backend service above
+        sync: false

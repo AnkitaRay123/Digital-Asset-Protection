@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext'
 import { heroMedia } from '../../data/mockData'
 import axios from 'axios'
 import { Loader2 } from 'lucide-react'
+import API_BASE_URL from '../../config/api'
 
 export function UploadPage() {
   const { addUpload, mediaAssets, recentUploadId } = useAppContext()
@@ -68,7 +69,7 @@ export function UploadPage() {
       await new Promise(resolve => setTimeout(resolve, 800))
       
       setUploadStatus('fingerprinting')
-      const response = await axios.post('http://localhost:5000/upload-media', formData, {
+      const response = await axios.post(`${API_BASE_URL}/upload-media`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
 
@@ -106,7 +107,7 @@ export function UploadPage() {
       const formData = new FormData()
       formData.append('file', selectedFile)
 
-      const response = await axios.post('http://localhost:5000/test-similarity', formData, {
+      const response = await axios.post(`${API_BASE_URL}/test-similarity`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
 

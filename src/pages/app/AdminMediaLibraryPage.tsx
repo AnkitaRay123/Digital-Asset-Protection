@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Loader2, Trash2, RefreshCw, FileText, Search, Image as ImageIcon, Film } from 'lucide-react'
 import { MediaSurface } from '../../components/ui/MediaSurface'
+import { useAppContext } from '../../context/AppContext'
+import API_BASE_URL from '../../config/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface MediaItem {
@@ -10,9 +12,11 @@ interface MediaItem {
   type: 'image' | 'video'
   hashes: string[]
   upload_time: string
+  mockSrc?: string
 }
 
 export function AdminMediaLibraryPage() {
+  const { mediaAssets, removeMediaAsset } = useAppContext()
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [query, setQuery] = useState('')
@@ -25,7 +29,7 @@ export function AdminMediaLibraryPage() {
   const fetchMedia = async () => {
     setIsLoading(true)
     try {
-      const res = await axios.get('http://localhost:5000/media')
+      const res = await axios.get(`${API_BASE_URL}/media`)
       setMediaItems(res.data.media || [])
     } catch (err) {
       console.error('Failed to fetch media library:', err)
@@ -41,7 +45,7 @@ export function AdminMediaLibraryPage() {
     if (!window.confirm('Are you sure you want to permanently delete this media?')) return
     setDeletingId(id)
     try {
-      await axios.delete(`http://localhost:5000/media/${id}`)
+      await axios.delete(`${API_BASE_URL}/media/${id}`)
       setMediaItems((prev) => prev.filter((item) => item._id !== id))
     } catch (err) {
       console.error('Failed to delete media:', err)
@@ -54,7 +58,7 @@ export function AdminMediaLibraryPage() {
   const handleRescan = async (id: string) => {
     setIsRescanning(id)
     try {
-      const res = await axios.post(`http://localhost:5000/media/rescan/${id}`)
+      const res = await axios.post(`${API_BASE_URL}/media/rescan/${id}`)
       setMediaItems((prev) =>
         prev.map((item) => (item._id === id ? { ...item, hashes: res.data.hashes } : item))
       )
@@ -68,9 +72,17 @@ export function AdminMediaLibraryPage() {
   }
 
   // ─── Filtering ──────────────────────────────────────────────────────────────
-  const filteredMedia = mediaItems.filter((item) => {
+  const filteredBackend = mediaItems.filter((item) => {
     const matchesQuery = item.filename.toLowerCase().includes(query.toLowerCase())
     const matchesType = typeFilter === 'All' || item.type === typeFilter
+    return matchesQuery && matchesType
+  })
+
+  const filteredMock = mediaAssets.filter((asset) => {
+    const matchesQuery = asset.title.toLowerCase().includes(query.toLowerCase())
+    const isVideo = asset.videoSrc?.match(/\.(mp4|avi|mov|mkv|webm)$/i)
+    const type = isVideo ? 'video' : 'image'
+    const matchesType = typeFilter === 'All' || type === typeFilter
     return matchesQuery && matchesType
   })
 
@@ -87,7 +99,7 @@ export function AdminMediaLibraryPage() {
           <div className="admin-modal__content stack-md">
             <div className="admin-modal__preview">
               <MediaSurface
-                src={`http://localhost:5000/uploads/${selectedItem.filename}`}
+                src={selectedItem.mockSrc || `${API_BASE_URL}/uploads/${selectedItem.filename}`}
                 kind={selectedItem.type as 'image' | 'video'}
                 alt={selectedItem.filename}
               />
@@ -147,7 +159,7 @@ export function AdminMediaLibraryPage() {
             <Loader2 className="spinner" size={32} />
             <p>Loading media library...</p>
           </div>
-        ) : filteredMedia.length === 0 ? (
+        ) : filteredBackend.length === 0 && filteredMock.length === 0 ? (
           <div className="admin-empty-state">
             <FileText size={48} opacity={0.5} />
             <h3>No Media Found</h3>
@@ -155,13 +167,13 @@ export function AdminMediaLibraryPage() {
           </div>
         ) : (
           <div className="admin-media-grid">
-            {filteredMedia.map((item) => {
+            {filteredBackend.map((item) => {
               const shortHash = item.hashes?.[0]?.substring(0, 8) || 'N/A'
               return (
                 <article key={item._id} className="admin-media-card">
                   <div className="admin-media-card__preview">
                     <MediaSurface
-                      src={`http://localhost:5000/uploads/${item.filename}`}
+                      src={`${API_BASE_URL}/uploads/${item.filename}`}
                       kind={item.type as 'image' | 'video'}
                       alt={item.filename}
                     />
@@ -193,6 +205,65 @@ export function AdminMediaLibraryPage() {
                       title="Permanently delete"
                     >
                       {deletingId === item._id ? <Loader2 className="spinner" size={16} /> : <Trash2 size={16} />}
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+
+            {/* ── Mock Media ── */}
+            {filteredMock.map((asset) => {
+              const type = asset.videoSrc?.match(/\.(mp4|avi|mov|mkv|webm)$/i) ? 'video' : 'image'
+              // Generate mock hash
+              let hashNum = 0;
+              for (let i = 0; i < asset.title.length; i++) hashNum = asset.title.charCodeAt(i) + ((hashNum << 5) - hashNum);
+              const shortHash = (hashNum >>> 0).toString(16).padStart(8, '0');
+              
+              return (
+                <article key={asset.id} className="admin-media-card">
+                  <div className="admin-media-card__preview">
+                    <MediaSurface
+                      src={asset.videoSrc || asset.thumbnail || ''}
+                      kind={type}
+                      alt={asset.title}
+                    />
+                    <div className="admin-media-card__type-badge">
+                      {type === 'image' ? <ImageIcon size={14} /> : <Film size={14} />}
+                    </div>
+                  </div>
+                  <div className="admin-media-card__body">
+                    <h4 className="admin-media-card__title" title={asset.title}>{asset.title}</h4>
+                    <div className="admin-media-card__meta">
+                      <span>{new Date(asset.uploadedAt).toLocaleDateString()}</span>
+                      <span className="admin-media-card__hash">Hash: <code>{shortHash}...</code></span>
+                    </div>
+                  </div>
+                  <div className="admin-media-card__actions">
+                    <button className="button button--secondary button--sm" onClick={() => setSelectedItem({
+                      _id: asset.id,
+                      filename: asset.title,
+                      type: type,
+                      hashes: [`${shortHash}e4b2a1c9...`],
+                      upload_time: asset.uploadedAt,
+                      mockSrc: asset.videoSrc || asset.thumbnail || ''
+                    })}>View Details</button>
+                    <button
+                      className="button button--ghost button--sm"
+                      onClick={() => alert('Mock media rescanned (simulated)')}
+                      title="Re-run fingerprinting & AI similarity check"
+                    >
+                      <RefreshCw size={16} />
+                    </button>
+                    <button
+                      className="button button--danger button--sm"
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to permanently delete this media?')) {
+                          removeMediaAsset(asset.id)
+                        }
+                      }}
+                      title="Permanently delete"
+                    >
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </article>
