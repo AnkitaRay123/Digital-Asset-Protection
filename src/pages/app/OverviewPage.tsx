@@ -128,7 +128,7 @@ export function OverviewPage() {
           </div>
 
           <MediaSurface
-            src={mediaAssets[0].videoSrc || mediaAssets[0].image}
+            src={mediaAssets[0].videoSrc || mediaAssets[0].thumbnail}
             kind={mediaAssets[0].videoSrc ? 'video' : 'image'}
             alt={mediaAssets[0].title}
             eyebrow={mediaAssets[0].sportCategory}
