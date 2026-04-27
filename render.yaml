@@ -22,10 +22,8 @@ services:
   # ─────────────────────────────────────────
   # Frontend: React / Vite (Static Site)
   # ─────────────────────────────────────────
-  - type: web
+  - type: static
     name: digital-asset-protection-frontend
-    env: static
-    plan: free
     rootDir: .
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
